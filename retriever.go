@@ -2,6 +2,7 @@ package cdretriever
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -14,7 +15,12 @@ type Retriever struct {
 }
 
 // NewRetriever creates a new CentralDogma retriever.
-func NewRetriever(baseURL, token, project, repo, path string) (*Retriever, error) {
+func NewRetriever(baseURL, token, project, repo, path string, opts ...Option) (*Retriever, error) {
+	cfg := &config{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
 	c, err := centraldogma.NewClientWithToken(baseURL, token, nil)
 	if err != nil {
 		return nil, fmt.Errorf("cdretriever: failed to create a new CentralDogma client: %w", err)
@@ -28,8 +34,10 @@ func NewRetriever(baseURL, token, project, repo, path string) (*Retriever, error
 		return nil, fmt.Errorf("cdretriever: failed to create a new CentralDogma watcher: %w", err)
 	}
 
-	if result := watcher.AwaitInitialValueWith(30 * time.Second); result.Err != nil {
-		return nil, fmt.Errorf("cdretriever: failed to retrieve the initial value: %w", result.Err)
+	if cfg.awaitInitialValueWith != nil {
+		if result := watcher.AwaitInitialValueWith(*cfg.awaitInitialValueWith); result.Err != nil {
+			return nil, &ErrAwaitInitialValue{cause: result.Err}
+		}
 	}
 
 	return &Retriever{Watcher: watcher}, nil
@@ -49,4 +57,30 @@ func (r *Retriever) Retrieve(_ context.Context) ([]byte, error) {
 func (r *Retriever) Close() error {
 	r.Watcher.Close()
 	return nil
+}
+
+type Option func(*config)
+
+type config struct {
+	awaitInitialValueWith *time.Duration
+}
+
+func WithAwaitInitialValue(dur time.Duration) Option {
+	return func(c *config) {
+		c.awaitInitialValueWith = &dur
+	}
+}
+
+func IsErrAwaitInitialValue(err error) bool {
+	var errAwaitInitialValue *ErrAwaitInitialValue
+	ok := errors.As(err, &errAwaitInitialValue)
+	return ok
+}
+
+type ErrAwaitInitialValue struct {
+	cause error
+}
+
+func (e *ErrAwaitInitialValue) Error() string {
+	return fmt.Sprintf("cdretriever: failed to retrieve the initial value: %s", e.cause)
 }

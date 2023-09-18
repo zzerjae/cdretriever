@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/zzerjae/cdretriever"
 
@@ -44,4 +45,18 @@ func TestRetriever_Retrieve(t *testing.T) {
 	assert.Equalf(t, want, got, "Retrieve() got = %v, want %v", got, want)
 
 	_ = r.Close()
+}
+
+func TestRetriever_FailedToAwaitInitialValue(t *testing.T) {
+	_, err := cdretriever.NewRetriever(
+		"invalid-base-url",
+		"invalid-token",
+		"invalid-project",
+		"invalid-repo",
+		"flag-config.yaml",
+		cdretriever.WithAwaitInitialValue(time.Second),
+	)
+	if err != nil {
+		assert.True(t, cdretriever.IsErrAwaitInitialValue(err))
+	}
 }
